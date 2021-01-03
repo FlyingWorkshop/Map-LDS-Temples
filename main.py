@@ -3,6 +3,7 @@ import os
 import googlemaps
 import plotly_express as px
 import pandas as pd
+import datetime
 
 from bs4 import BeautifulSoup
 from requests_html import HTMLSession
@@ -11,36 +12,74 @@ GOOGLE_API_KEY = 'FILL'
 
 
 class Temple:
-    def __init__(self, name, dedicated):
+    def __init__(self, name: str, dedicated: str):
         self.name = name
-        self.dedicated = dedicated
+        self.ded = dedicated
         self.lat = None
         self.lng = None
 
     def report(self):
         print(f'Name: {self.name}')
-        print(f'Dedicated: {self.dedicated}')
+        print(f'Dedicated: {self.ded}')
         print(f'Lat: {self.lat}')
         print(f'Lng: {self.lng}')
+
+    def exists(self):
+        return not any(self.ded == s for s in ['Construction', 'Announced', 'Renovation'])
 
 
 class Database:
     def __init__(self):
         self.temples = []
+        self._cache_root()
+        self._make_temples()   # temples' lat/lng are empty
+        self._cache_leaves()
+        self._add_geocodes()   # temples' lat/lng are filled
 
-        self.__cache_root()
-        self.__make_temples()   # temples' lat/lng are empty
-        self.__cache_leaves()
-        self.__add_geocodes()   # temples' lat/lng are filled
+    def make_bar(self, s):
+        if s == 'm':
+            months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September',
+                      'October', 'November', 'December']
+            data = {'Time': months, 'Temples Built': [0] * 12}
+            for temple in self.temples:
+                if temple.exists():
+                    i = datetime.datetime.strptime(temple.ded.split()[1], '%B').month
+                    data['Temples Built'][i - 1] += 1
+        elif s == 'y':
+            oldest_ded = 1884
+            newest_ded = 2020
+            years = list(range(oldest_ded, newest_ded + 1))
+            data = {'Time': years, 'Temples Built': [0] * len(years)}
+            for temple in self.temples:
+                if temple.exists():
+                    i = int(temple.ded.split()[2]) - oldest_ded
+                    data['Temples Built'][i] += 1
+        df = pd.DataFrame.from_dict(data)
+        fig = px.bar(df, x='Time', y='Temples Built')
+        fig.show()
 
-        self.data = {'Temple': [], 'Latitude': [], 'Longitude': [], 'Status': []}
-        self.__make_data()
+    def make_globe(self):
+        """
+        Plots every LDS temple on a 3d plotly globe (orthographic projection)
+        """
+        data = {'Temple': [], 'Latitude': [], 'Longitude': [], 'Status': []}
+        for temple in self.temples:
+            data['Temple'].append(temple.name)
+            data['Latitude'].append(temple.lat)
+            data['Longitude'].append(temple.lng)
+            if temple.exists():
+                data['Status'].append('Built')
+            else:
+                data['Status'].append(temple.ded)
+        df = pd.DataFrame(data=data)
+        fig = px.scatter_geo(df, lat='Latitude', lon='Longitude', color='Status', projection='orthographic')
+        fig.show()
 
-    def __cache_root(self):
+    def _cache_root(self):
         if os.path.exists('root.json'):
             pass
         url = 'https://www.churchofjesuschrist.org/temples/list?lang=eng'
-        html = self.get_html(url)
+        html = self._get_html(url)
         soup = BeautifulSoup(html, 'html.parser')
         cache = {}
         for tag in soup.main('li'):
@@ -50,7 +89,7 @@ class Database:
         with open('root.json', 'w', encoding='utf-8') as f:
             json.dump(cache, f, ensure_ascii=False, indent=4)
 
-    def __make_temples(self) -> list:
+    def _make_temples(self) -> list:
         """
         root.json needs to exist for this method to work
         """
@@ -59,7 +98,7 @@ class Database:
             temple = Temple(name, dedicated)
             self.temples.append(temple)
 
-    def __cache_leaves(self):
+    def _cache_leaves(self):
         for temple in self.temples:
             if os.path.exists(f'Leaves/{temple.name}.json'):
                 continue
@@ -67,24 +106,14 @@ class Database:
             data = gmaps.geocode(temple.name)
             json.dump(data, open(f'Leaves/{temple.name}.json', 'w'), indent=4)
 
-    def __add_geocodes(self):
+    def _add_geocodes(self):
         for temple in self.temples:
             data = json.load(open(f'Leaves/{temple.name}.json'))[0]
             temple.lat = data['geometry']['location']['lat']
             temple.lng = data['geometry']['location']['lng']
 
-    def __make_data(self):
-        for temple in self.temples:
-            self.data['Temple'].append(temple.name)
-            self.data['Latitude'].append(temple.lat)
-            self.data['Longitude'].append(temple.lng)
-            if temple.dedicated != 'Construction' and temple.dedicated != 'Announced':
-                self.data['Status'].append('Built')
-            else:
-                self.data['Status'].append(temple.dedicated)
-
     @staticmethod
-    def get_html(url) -> object:
+    def _get_html(url) -> object:
         session = HTMLSession()
         r = session.get(url)
         r.html.render()
@@ -93,10 +122,7 @@ class Database:
 
 def main():
     db = Database()
-    df = pd.DataFrame(data=db.data)
-    fig = px.scatter_geo(df, lat='Latitude', lon='Longitude', color='Status',
-                         projection='orthographic')
-    fig.show()
+    db.make_bar('y')
 
 
 if __name__ == '__main__':
