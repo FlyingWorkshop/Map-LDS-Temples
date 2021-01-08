@@ -3,10 +3,9 @@ import os
 import googlemaps
 import plotly_express as px
 import pandas as pd
-import datetime
 from bs4 import BeautifulSoup
 from requests_html import HTMLSession
-from tqdm import tqdm
+import datetime
 
 
 class Temple:
@@ -28,10 +27,6 @@ class Temple:
             self.year = None
             self.status = dedicated  # e.g. 'Construction' 'Announced' 'Renovation'
 
-    def report(self):
-        for attr in dir(self):
-            print(f'{attr=}')
-
     def exists(self):
         return self.ded[0].isnumeric()
 
@@ -43,8 +38,11 @@ class Database:
         self.temples = []
         self._make_temples('lds_cache.json')  # lat/lng are empty
 
-        self._cache_google_data('API_Key', 'google_caches')
+        self._cache_google_data('AIzaSyAZ-56NcO_k6FtpBNFEy4NNCu1h1YOXRkg', 'google_caches')
         self._fill_temple_coords('google_caches')
+
+        self.mega_index = {}
+        self._make_mega_index()
 
     def _cache_source(self, file):
         if not os.path.exists(file):
@@ -80,9 +78,10 @@ class Database:
     def _cache_google_data(self, api_key: str, dirname):
         if not os.path.exists(dirname):
             os.mkdir(dirname)
-        for temple in tqdm(self.temples):
+        for temple in self.temples:
             cache = f'{dirname}/{temple.name}.json'
             if not os.path.exists(cache):
+                print(f'Getting {cache}...')
                 gmaps = googlemaps.Client(api_key)
                 data = gmaps.geocode(temple.name)
                 json.dump(data, open(cache, 'w'), indent=4)
@@ -92,6 +91,41 @@ class Database:
             data = json.load(open(f'{dirname}/{temple.name}.json'))[0]
             temple.lat = data['geometry']['location']['lat']
             temple.lng = data['geometry']['location']['lng']
+
+    def _make_mega_index(self):
+        attrs = list(self.temples[0].__dict__)[-3:]
+        d1 = {k1: {} for k1 in attrs}
+        for temple in self.temples:
+            for k1 in attrs:
+                d2 = d1[k1]
+                k2 = temple.__dict__[k1]
+                if k2 not in d2:
+                    d2[k2] = []
+                d2[k2].append(temple.name)
+        self.mega_index = d1
+
+    def report_mega_index(self):
+        for title, index in self.mega_index.items():
+            print('####')
+            print(title.capitalize() + ': ')
+            for k, v in index.items():
+                print(k, len(v))
+            print('####')
+            print('')
+
+    def make_globe(self):
+        data = {'temple': [], 'lat': [], 'lng': [], 'status': []}
+        for temple in self.temples:
+            data['temple'].append(temple.name)
+            data['lat'].append(temple.lat)
+            data['lng'].append(temple.lng)
+            if temple.exists():
+                data['status'].append('Built')
+            else:
+                data['status'].append(temple.ded)
+        df = pd.DataFrame(data=data)
+        fig = px.scatter_geo(df, lat='lat', lon='lng', color='status', projection='orthographic', hover_name='temple')
+        fig.show()
 
     def make_bar(self, s: str):
         data = {}
@@ -114,21 +148,4 @@ class Database:
                     data['Temples Built'][i] += 1
         df = pd.DataFrame.from_dict(data)
         fig = px.bar(df, x='Time', y='Temples Built')
-        fig.show()
-
-    def make_globe(self):
-        """
-        Plots every LDS temple on a 3d plotly globe (orthographic projection)
-        """
-        data = {'temple': [], 'lat': [], 'lng': [], 'status': []}
-        for temple in self.temples:
-            data['temple'].append(temple.name)
-            data['lat'].append(temple.lat)
-            data['lng'].append(temple.lng)
-            if temple.exists():
-                data['status'].append('Built')
-            else:
-                data['status'].append(temple.ded)
-        df = pd.DataFrame(data=data)
-        fig = px.scatter_geo(df, lat='lat', lon='lng', color='status', projection='orthographic', hover_name='temple')
         fig.show()
