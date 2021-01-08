@@ -38,16 +38,13 @@ class Temple:
 
 class Database:
     def __init__(self):
-        source = 'source_cache.json'
-        self._cache_source(source)
+        self._cache_source('lds_cache.json')
 
         self.temples = []
-        self._make_temples(source)  # lat/lng are empty
+        self._make_temples('lds_cache.json')  # lat/lng are empty
 
-        dirname = 'google_cache'
-        api_key = 'YOURS_HERE'
-        self._cache_google_data(api_key, dirname)
-        self._add_latlng(dirname)
+        self._cache_google_data('API_Key', 'google_caches')
+        self._fill_temple_coords('google_caches')
 
     def _cache_source(self, file):
         if not os.path.exists(file):
@@ -90,7 +87,7 @@ class Database:
                 data = gmaps.geocode(temple.name)
                 json.dump(data, open(cache, 'w'), indent=4)
 
-    def _add_latlng(self, dirname):
+    def _fill_temple_coords(self, dirname):
         for temple in self.temples:
             data = json.load(open(f'{dirname}/{temple.name}.json'))[0]
             temple.lat = data['geometry']['location']['lat']
