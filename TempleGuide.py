@@ -38,11 +38,23 @@ class Database:
         self.temples = []
         self._make_temples('lds_cache.json')  # lat/lng are empty
 
-        self._cache_google_data('AIzaSyAZ-56NcO_k6FtpBNFEy4NNCu1h1YOXRkg', 'google_caches')
+        self._cache_google_data('YOURS HERE', 'google_caches')
         self._fill_temple_coords('google_caches')
 
-        self.mega_index = {}
+        self.data = None
+        self._make_data()
+
+        self.mega_index = None
         self._make_mega_index()
+
+    def _make_data(self):
+        attrs = list(self.temples[0].__dict__)
+        self.data = {attr: [] for attr in attrs}
+        for temple in self.temples:
+            for attr in attrs:
+                inside = self.data[attr]  # list
+                elem = temple.__dict__[attr]  # elem is the value of a given attr for this temple (ex: 'August')
+                inside.append(elem)
 
     def _cache_source(self, file):
         if not os.path.exists(file):
@@ -94,15 +106,15 @@ class Database:
 
     def _make_mega_index(self):
         attrs = list(self.temples[0].__dict__)[-3:]
-        d1 = {k1: {} for k1 in attrs}
+        outside = {attr: {} for attr in attrs}  # keys are literals of attrs of class Temple (ex: 'month)
         for temple in self.temples:
-            for k1 in attrs:
-                d2 = d1[k1]
-                k2 = temple.__dict__[k1]
-                if k2 not in d2:
-                    d2[k2] = []
-                d2[k2].append(temple.name)
-        self.mega_index = d1
+            for attr in attrs:
+                inside = outside[attr]  # dict
+                key = temple.__dict__[attr]  # keys are values of attrs of this Temple object (ex: 'August')
+                if key not in inside:
+                    inside[key] = []
+                inside[key].append(temple.name)
+        self.mega_index = outside
 
     def report_mega_index(self):
         for title, index in self.mega_index.items():
@@ -112,6 +124,11 @@ class Database:
                 print(k, len(v))
             print('####')
             print('')
+
+    def make_globe1(self):
+        df = pd.DataFrame(data=self.data)
+        fig = px.scatter_geo(df, lat='lat', lon='lng', color='status', projection='orthographic', hover_name='name')
+        fig.show()
 
     def make_globe(self):
         data = {'temple': [], 'lat': [], 'lng': [], 'status': []}
