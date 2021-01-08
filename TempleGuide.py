@@ -38,9 +38,8 @@ class Temple:
 
 class Database:
     def __init__(self):
-        url = 'https://www.churchofjesuschrist.org/temples/list?lang=eng'
         source = 'source_cache.json'
-        self._cache_source_page(url, source)
+        self._cache_source(source)
 
         self.temples = []
         self._make_temples(source)  # lat/lng are empty
@@ -50,29 +49,30 @@ class Database:
         self._cache_google_data(api_key, dirname)
         self._add_latlng(dirname)
 
-    @staticmethod
-    def _cache_source_page(url, filename):
-        if os.path.exists(filename):
-            pass
+    def _cache_source(self, file):
+        if not os.path.exists(file):
+            html = self._get_html('https://www.churchofjesuschrist.org/temples/list?lang=eng')
+            data = self._parse_html(html)
+            with open(file, 'w') as f:
+                json.dump(data, f, indent=4)
 
-        # get html
+    @staticmethod
+    def _get_html(url):
         session = HTMLSession()
         r = session.get(url)
         r.html.render()
-        html = r.html.html
+        return r.html.html
 
-        # parse html and cache data
-        cache = {}
+    @staticmethod
+    def _parse_html(html):
+        d = {}
         soup = BeautifulSoup(html, 'lxml')
         for tag in soup.main('li'):
             spans = tag('span')
-            name = spans[0].text
-            dedicated = spans[2].text
-            cache[name] = dedicated
-
-        # store cache as json
-        with open(filename, 'w') as f:
-            json.dump(cache, f, indent=4)
+            name = spans[0].text  # temple name (ex: 'Aba Nigeria Temple')
+            ded = spans[2].text  # either status (ex: 'Construction') or dedication date (ex: '1 January 2001)
+            d[name] = ded
+        return d
 
     def _make_temples(self, source):
         data = json.load(open(source))
@@ -86,7 +86,6 @@ class Database:
         for temple in tqdm(self.temples):
             cache = f'{dirname}/{temple.name}.json'
             if not os.path.exists(cache):
-                print('Verifying google_cache...')
                 gmaps = googlemaps.Client(api_key)
                 data = gmaps.geocode(temple.name)
                 json.dump(data, open(cache, 'w'), indent=4)
