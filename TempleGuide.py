@@ -1,11 +1,8 @@
-import json
-import os
-import googlemaps
-import plotly_express as px
-import pandas as pd
 from bs4 import BeautifulSoup
 from requests_html import HTMLSession
-import datetime
+import googlemaps
+import json
+import os
 
 
 class Temple:
@@ -20,7 +17,7 @@ class Temple:
         if self.exists():
             date = dedicated.split()
             self.month = date[1]
-            self.year = date[2]
+            self.year = int(date[2])
             self.status = 'Built'
         else:
             self.month = None
@@ -33,28 +30,19 @@ class Temple:
 
 class Database:
     def __init__(self):
-        self._cache_source('lds_cache.json')
+        webcache = 'lds_cache.json'
+        self._cache_source(webcache)
 
+        gcache_dir = 'google_caches'
         self.temples = []
-        self._make_temples('lds_cache.json')  # lat/lng are empty
+        self._make_temples(webcache)  # lat/lng are empty
+        self._cache_gdata(gcache_dir, 'YOUR KEY HERE')
+        self._fill_coords(gcache_dir)
 
-        self._cache_google_data('YOURS HERE', 'google_caches')
-        self._fill_temple_coords('google_caches')
-
-        self.data = None
-        self._make_data()
-
-        self.mega_index = None
-        self._make_mega_index()
-
-    def _make_data(self):
-        attrs = list(self.temples[0].__dict__)
-        self.data = {attr: [] for attr in attrs}
-        for temple in self.temples:
-            for attr in attrs:
-                inside = self.data[attr]  # list
-                elem = temple.__dict__[attr]  # elem is the value of a given attr for this temple (ex: 'August')
-                inside.append(elem)
+        self.index = None
+        self.inverted = None
+        self._make_index()
+        self._make_inverted()
 
     def _cache_source(self, file):
         if not os.path.exists(file):
@@ -87,7 +75,7 @@ class Database:
             temple = Temple(name, dedicated)
             self.temples.append(temple)
 
-    def _cache_google_data(self, api_key: str, dirname):
+    def _cache_gdata(self, dirname, api_key):
         if not os.path.exists(dirname):
             os.mkdir(dirname)
         for temple in self.temples:
@@ -98,25 +86,36 @@ class Database:
                 data = gmaps.geocode(temple.name)
                 json.dump(data, open(cache, 'w'), indent=4)
 
-    def _fill_temple_coords(self, dirname):
+    def _fill_coords(self, dirname):
         for temple in self.temples:
             data = json.load(open(f'{dirname}/{temple.name}.json'))[0]
             temple.lat = data['geometry']['location']['lat']
             temple.lng = data['geometry']['location']['lng']
 
-    def _make_mega_index(self):
-        attrs = list(self.temples[0].__dict__)[-3:]
-        outside = {attr: {} for attr in attrs}  # keys are literals of attrs of class Temple (ex: 'month)
+    def _make_index(self):
+        attrs = list(self.temples[0].__dict__)
+        self.index = {attr: [] for attr in attrs}
         for temple in self.temples:
             for attr in attrs:
-                inside = outside[attr]  # dict
-                key = temple.__dict__[attr]  # keys are values of attrs of this Temple object (ex: 'August')
-                if key not in inside:
-                    inside[key] = []
-                inside[key].append(temple.name)
-        self.mega_index = outside
+                inside = self.index[attr]       # list
+                elem = temple.__dict__[attr]    # elem is the value of a given attr for this temple (ex: 'August')
+                inside.append(elem)
 
-    def report_mega_index(self):
+    def _make_inverted(self):
+        attrs = list(self.temples[0].__dict__)[-3:]
+        outer = {attr: {} for attr in attrs}  # keys are literals of attrs of class Temple (ex: 'month)
+        for temple in self.temples:
+            for attr in attrs:
+                inner = outer[attr]          # inner is a subdict of outer
+                key = temple.__dict__[attr]  # keys are values of attrs of this Temple object (ex: 'August')
+                if not key:
+                    continue
+                if key not in inner:
+                    inner[key] = []
+                inner[key].append(temple.name)
+        self.inverted = outer
+
+    def report_inverted_index(self):
         for title, index in self.mega_index.items():
             print('####')
             print(title.capitalize() + ': ')
@@ -124,45 +123,3 @@ class Database:
                 print(k, len(v))
             print('####')
             print('')
-
-    def make_globe1(self):
-        df = pd.DataFrame(data=self.data)
-        fig = px.scatter_geo(df, lat='lat', lon='lng', color='status', projection='orthographic', hover_name='name')
-        fig.show()
-
-    def make_globe(self):
-        data = {'temple': [], 'lat': [], 'lng': [], 'status': []}
-        for temple in self.temples:
-            data['temple'].append(temple.name)
-            data['lat'].append(temple.lat)
-            data['lng'].append(temple.lng)
-            if temple.exists():
-                data['status'].append('Built')
-            else:
-                data['status'].append(temple.ded)
-        df = pd.DataFrame(data=data)
-        fig = px.scatter_geo(df, lat='lat', lon='lng', color='status', projection='orthographic', hover_name='temple')
-        fig.show()
-
-    def make_bar(self, s: str):
-        data = {}
-        if s == 'm':
-            months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September',
-                      'October', 'November', 'December']
-            data = {'Time': months, 'Temples Built': [0] * 12}
-            for temple in self.temples:
-                if temple.exists():
-                    i = datetime.datetime.strptime(temple.ded.split()[1], '%B').month
-                    data['Temples Built'][i - 1] += 1
-        elif s == 'y':
-            oldest_ded = 1884
-            newest_ded = 2020
-            years = list(range(oldest_ded, newest_ded + 1))
-            data = {'Time': years, 'Temples Built': [0] * len(years)}
-            for temple in self.temples:
-                if temple.exists():
-                    i = int(temple.ded.split()[2]) - oldest_ded
-                    data['Temples Built'][i] += 1
-        df = pd.DataFrame.from_dict(data)
-        fig = px.bar(df, x='Time', y='Temples Built')
-        fig.show()
