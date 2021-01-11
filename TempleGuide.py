@@ -114,12 +114,3 @@ class Database:
                     inner[key] = []
                 inner[key].append(temple.name)
         self.inverted = outer
-
-    def report_inverted_index(self):
-        for title, index in self.inverted.items():
-            print('####')
-            print(title.capitalize() + ': ')
-            for k, v in index.items():
-                print(k, len(v))
-            print('####')
-            print('')
