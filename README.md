@@ -1,6 +1,6 @@
 # Map-LDS-Temples
 # QUICKSTART:
-import TempleGuide as tg,
+"import TempleGuide as tg"
 
 # CLASSES: Database(), Temple()
 
